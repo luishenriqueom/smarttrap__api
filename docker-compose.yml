@@ -18,7 +18,7 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     environment:
       DATABASE_URL: postgresql+psycopg://smarttrap:smarttrap@db:5432/smarttrap
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
