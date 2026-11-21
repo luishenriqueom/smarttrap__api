@@ -92,7 +92,7 @@ def capture_counts(db: Session, device_ids: list[uuid.UUID]) -> dict[uuid.UUID, 
         return {}
     rows = db.execute(
         select(Capture.device_id, func.count())
-        .where(Capture.device_id.in_(device_ids))
+        .where(Capture.device_id.in_(device_ids), Capture.deleted_at.is_(None))
         .group_by(Capture.device_id)
     ).all()
     return {device_id: count for device_id, count in rows}

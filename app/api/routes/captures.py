@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import bearer_scheme, get_current_user, require_writer
 from app.db.models import Capture, Device, User
 from app.db.session import SessionLocal, get_db
-from app.schemas import CaptureOut, CapturePage, CaptureUpdate
+from app.schemas import CaptureDiscardResult, CaptureIds, CaptureOut, CapturePage, CaptureRestoreResult, CaptureUpdate
 from app.services.capture_events import capture_broker, visible_to
 from app.services.devices import get_visible_device, is_superadmin
 from app.services.storage import resolve_capture
@@ -29,7 +29,7 @@ MAX_EXPORT = 2000
 
 
 def _filters(user: User, device_id: UUID | None, start: datetime | None, end: datetime | None) -> list:
-    filters = []
+    filters = [Capture.deleted_at.is_(None)]
     if not is_superadmin(user):
         filters.append(Device.owner_id == user.id)
     if device_id is not None:
@@ -161,6 +161,33 @@ def export_captures(
     )
 
 
+@router.post("/discard", response_model=CaptureDiscardResult)
+def discard_captures(
+    body: CaptureIds,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_writer),
+) -> CaptureDiscardResult:
+    captures = _visible_active(db, user, body.ids)
+    moment = datetime.now(timezone.utc)
+    for capture in captures:
+        capture.deleted_at = moment
+    db.commit()
+    return CaptureDiscardResult(discarded=len(captures))
+
+
+@router.post("/restore", response_model=CaptureRestoreResult)
+def restore_captures(
+    body: CaptureIds,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_writer),
+) -> CaptureRestoreResult:
+    captures = _visible_deleted(db, user, body.ids)
+    for capture in captures:
+        capture.deleted_at = None
+    db.commit()
+    return CaptureRestoreResult(restored=len(captures))
+
+
 @router.get("/stream")
 def stream_captures(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> StreamingResponse:
     db = SessionLocal()
@@ -262,11 +289,41 @@ def _archive_name(device_code: str, captured_at: datetime, capture_id: UUID) -> 
     return f"{code}/{stamp}_{capture_id.hex[:8]}.jpg"
 
 
+def _owned(user: User, device: Device) -> bool:
+    return is_superadmin(user) or device.owner_id == user.id
+
+
+def _visible_active(db: Session, user: User, ids: list[UUID]) -> list[Capture]:
+    return _visible_by_state(db, user, ids, deleted=False)
+
+
+def _visible_deleted(db: Session, user: User, ids: list[UUID]) -> list[Capture]:
+    return _visible_by_state(db, user, ids, deleted=True)
+
+
+def _visible_by_state(db: Session, user: User, ids: list[UUID], deleted: bool) -> list[Capture]:
+    from fastapi import HTTPException
+
+    wanted = list(dict.fromkeys(ids))
+    state = Capture.deleted_at.is_not(None) if deleted else Capture.deleted_at.is_(None)
+    rows = db.execute(
+        select(Capture, Device)
+        .join(Device, Capture.device_id == Device.id)
+        .where(Capture.id.in_(wanted), state)
+    ).all()
+    captures = [capture for capture, device in rows if _owned(user, device)]
+    if len(captures) != len(wanted):
+        raise HTTPException(status_code=404, detail="Captura não encontrada")
+    return captures
+
+
 def _load(db: Session, user: User, capture_id: UUID) -> tuple[Capture, Device]:
     from fastapi import HTTPException
 
     row = db.execute(
-        select(Capture, Device).join(Device, Capture.device_id == Device.id).where(Capture.id == capture_id)
+        select(Capture, Device)
+        .join(Device, Capture.device_id == Device.id)
+        .where(Capture.id == capture_id, Capture.deleted_at.is_(None))
     ).one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Captura não encontrada")

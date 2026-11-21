@@ -71,6 +71,7 @@ class Capture(Base):
     manual_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     label: Mapped[str] = mapped_column(String(20), default="unlabeled", server_default="unlabeled")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     device: Mapped[Device] = relationship(back_populates="captures")
 

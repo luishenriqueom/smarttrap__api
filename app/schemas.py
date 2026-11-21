@@ -117,6 +117,18 @@ class CaptureUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class CaptureIds(BaseModel):
+    ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
+class CaptureDiscardResult(BaseModel):
+    discarded: int
+
+
+class CaptureRestoreResult(BaseModel):
+    restored: int
+
+
 class DevicePage(BaseModel):
     items: list[DeviceOut]
     total: int
