@@ -53,7 +53,7 @@ def db(migrated_database):
     from app.services.seed import seed
 
     session = SessionLocal()
-    session.execute(text("TRUNCATE TABLE firmware, metrics, captures, devices, gateways, users CASCADE"))
+    session.execute(text("TRUNCATE TABLE capture_annotations, devices, models, species, firmware, metrics, captures, gateways, users CASCADE"))
     session.commit()
     for directory in (CAPTURES, FIRMWARE):
         for child in list(directory.iterdir()):

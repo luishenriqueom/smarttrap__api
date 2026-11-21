@@ -1,19 +1,22 @@
+import json
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_gateway
-from app.db.models import Capture, Firmware, Gateway, Metric
+from app.db.models import Capture, CaptureAnnotation, Firmware, Gateway, Metric, Species, TrainedModel
 from app.db.session import get_db
-from app.schemas import FirmwareOut, FrameConfigOut, IngestOut, MetricIn
+from app.schemas import FirmwareOut, FrameConfigOut, IngestOut, MetricIn, ModelMetaOut
 from app.services.capture_events import capture_broker, capture_event
 from app.services.devices import as_utc, get_or_create_device, normalize_code, parse_iso_datetime
 from app.services.firmware import needs_update, require_target, resolve_firmware
 from app.services.framesize import FRAME_SIZES, recorded_quality, recorded_size
 from app.services.storage import MAX_IMAGE_BYTES, delete_capture_file, save_jpeg
+from app.services.training import models_root
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -30,6 +33,7 @@ async def ingest_image(
     image: UploadFile = File(),
     frame_size: str | None = Form(default=None),
     jpeg_quality: str | None = Form(default=None),
+    detections: str | None = Form(default=None),
     db: Session = Depends(get_db),
     gateway: Gateway = Depends(get_gateway),
 ) -> IngestOut:
@@ -61,6 +65,7 @@ async def ingest_image(
         height=height,
         label="unlabeled",
     )
+    _store_detections(db, capture, detections)
     _touch(gateway, device, now)
     db.add(capture)
     try:
@@ -112,7 +117,94 @@ def device_config(
     _touch(gateway, device, datetime.now(timezone.utc))
     db.commit()
     width, height = FRAME_SIZES[device.frame_size]
-    return FrameConfigOut(frame_size=device.frame_size, width=width, height=height, jpeg_quality=device.jpeg_quality)
+    return FrameConfigOut(
+        frame_size=device.frame_size,
+        width=width,
+        height=height,
+        jpeg_quality=device.jpeg_quality,
+        sleep_seconds=device.sleep_seconds,
+    )
+
+
+def _assigned_model(db: Session, device_code: str) -> tuple[object, TrainedModel]:
+    code = normalize_code(device_code)
+    device = get_or_create_device(db, code)
+    if device.model_id is None:
+        raise HTTPException(status_code=404, detail="Nenhum modelo atribuído")
+    trained = db.get(TrainedModel, device.model_id)
+    if trained is None or trained.status != "ready" or not trained.file_path or not trained.sha256:
+        raise HTTPException(status_code=404, detail="Nenhum modelo pronto")
+    return device, trained
+
+
+@router.get("/models/current", response_model=ModelMetaOut)
+def current_model_meta(
+    device_code: str = Query(min_length=1),
+    db: Session = Depends(get_db),
+    gateway: Gateway = Depends(get_gateway),
+) -> ModelMetaOut:
+    device, trained = _assigned_model(db, device_code)
+    _touch(gateway, device, datetime.now(timezone.utc))
+    db.commit()
+    return ModelMetaOut(
+        sha256=trained.sha256 or "",
+        window=trained.window,
+        stride=trained.stride,
+        classes=list(trained.class_labels or []),
+    )
+
+
+@router.get("/models/current/file")
+def current_model_file(
+    device_code: str = Query(min_length=1),
+    db: Session = Depends(get_db),
+    gateway: Gateway = Depends(get_gateway),
+) -> FileResponse:
+    device, trained = _assigned_model(db, device_code)
+    path = (models_root() / (trained.file_path or "")).resolve()
+    if not path.is_file() or not path.is_relative_to(models_root()):
+        raise HTTPException(status_code=404, detail="Arquivo do modelo não encontrado")
+    _touch(gateway, device, datetime.now(timezone.utc))
+    db.commit()
+    return FileResponse(path, media_type="application/octet-stream", filename="model.tflite")
+
+
+def _store_detections(db: Session, capture: Capture, raw: str | None) -> None:
+    if raw is None or raw.strip() == "":
+        return
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail="Detecções inválidas") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("boxes"), list):
+        raise HTTPException(status_code=422, detail="Detecções inválidas")
+    stored = 0
+    for item in payload["boxes"]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("species", "")).strip()
+        species = db.scalar(select(Species).where(Species.name == name))
+        if species is None:
+            continue
+        try:
+            box = CaptureAnnotation(
+                capture_id=capture.id,
+                species_id=species.id,
+                x=int(item["x"]),
+                y=int(item["y"]),
+                width=int(item["width"]),
+                height=int(item["height"]),
+                source="device",
+                confidence=None if item.get("confidence") is None else float(item["confidence"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="Detecções inválidas") from exc
+        if box.x < 0 or box.y < 0 or box.width < 1 or box.height < 1:
+            continue
+        db.add(box)
+        stored += 1
+    if stored:
+        capture.label = "with_pest"
 
 
 def _published(db: Session, target: str) -> Firmware:

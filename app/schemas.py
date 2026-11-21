@@ -68,6 +68,8 @@ class DeviceOut(BaseModel):
     capture_count: int
     frame_size: str
     jpeg_quality: int
+    sleep_seconds: int
+    model_id: UUID | None
 
 
 class DeviceCreate(BaseModel):
@@ -77,6 +79,7 @@ class DeviceCreate(BaseModel):
     owner_id: UUID | None = None
     frame_size: str | None = None
     jpeg_quality: int | None = None
+    sleep_seconds: int | None = None
 
 
 class DeviceUpdate(BaseModel):
@@ -85,6 +88,8 @@ class DeviceUpdate(BaseModel):
     owner_id: UUID | None = None
     frame_size: str | None = None
     jpeg_quality: int | None = None
+    sleep_seconds: int | None = None
+    model_id: UUID | None = None
 
 
 class FrameConfigOut(BaseModel):
@@ -92,6 +97,7 @@ class FrameConfigOut(BaseModel):
     width: int
     height: int
     jpeg_quality: int
+    sleep_seconds: int
 
 
 class CaptureOut(BaseModel):
@@ -186,3 +192,56 @@ class FirmwareOut(BaseModel):
 
 class FirmwarePublishOut(BaseModel):
     items: list[FirmwareOut]
+
+
+class SpeciesOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    position: int
+
+
+class SpeciesCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class AnnotationOut(BaseModel):
+    id: UUID
+    capture_id: UUID
+    species_id: UUID
+    species_name: str
+    x: int
+    y: int
+    width: int
+    height: int
+    source: str
+    confidence: float | None
+
+
+class AnnotationCreate(BaseModel):
+    species_id: UUID
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+
+
+class ModelOut(BaseModel):
+    id: UUID
+    status: str
+    sha256: str | None
+    class_labels: list[str]
+    input_size: int
+    window: int
+    stride: int
+    error: str | None
+    created_at: datetime
+
+
+class ModelMetaOut(BaseModel):
+    sha256: str
+    window: int
+    stride: int
+    classes: list[str]
+    threshold: float = 0.6

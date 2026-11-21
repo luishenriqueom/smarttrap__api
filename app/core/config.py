@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     captures_dir: Path = Path("data/captures")
     firmware_dir: Path = Path("data/firmware")
+    models_dir: Path = Path("data/models")
+    ei_api_key: str = ""
+    ei_project_id: int = 0
+    ei_learn_id: int = 0
 
     @property
     def cors_origin_list(self) -> list[str]:

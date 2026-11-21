@@ -13,6 +13,9 @@ DEFAULT_FRAME_SIZE = "svga"
 DEFAULT_JPEG_QUALITY = 12
 MIN_JPEG_QUALITY = 4
 MAX_JPEG_QUALITY = 63
+DEFAULT_SLEEP_SECONDS = 300
+MIN_SLEEP_SECONDS = 60
+MAX_SLEEP_SECONDS = 86400
 _SOF = {0xC0, 0xC1, 0xC2, 0xC3}
 
 
@@ -21,6 +24,12 @@ def require_frame_size(value: str) -> str:
     if token not in FRAME_SIZES:
         raise HTTPException(status_code=422, detail="Resolução inválida")
     return token
+
+
+def require_sleep_seconds(value: int) -> int:
+    if value < MIN_SLEEP_SECONDS or value > MAX_SLEEP_SECONDS:
+        raise HTTPException(status_code=422, detail="O intervalo de sono deve ficar entre 1 minuto e 24 horas")
+    return value
 
 
 def require_jpeg_quality(value: int) -> int:

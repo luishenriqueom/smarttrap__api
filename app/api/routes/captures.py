@@ -15,9 +15,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import bearer_scheme, get_current_user, require_writer
-from app.db.models import Capture, Device, User
+from app.db.models import Capture, CaptureAnnotation, Device, Species, User
 from app.db.session import SessionLocal, get_db
-from app.schemas import CaptureDiscardResult, CaptureIds, CaptureOut, CapturePage, CaptureRestoreResult, CaptureUpdate
+from app.schemas import (
+    AnnotationCreate,
+    AnnotationOut,
+    CaptureDiscardResult,
+    CaptureIds,
+    CaptureOut,
+    CapturePage,
+    CaptureRestoreResult,
+    CaptureUpdate,
+)
 from app.services.capture_events import capture_broker, visible_to
 from app.services.devices import get_visible_device, is_superadmin
 from app.services.storage import resolve_capture
@@ -144,6 +153,7 @@ def export_captures(
         if written == 0:
             raise HTTPException(status_code=404, detail="Nenhuma imagem neste período")
         archive.writestr("manifest.csv", manifest.getvalue())
+        archive.writestr("annotations.json", json.dumps(_export_boxes(db, rows), ensure_ascii=False))
     spool.seek(0)
     filename = f"dataset_{_utc(start):%Y-%m-%d}_{_utc(end):%Y-%m-%d}.zip"
 
@@ -252,6 +262,75 @@ def get_capture_image(
     return FileResponse(path, media_type="image/jpeg")
 
 
+@router.get("/{capture_id}/annotations", response_model=list[AnnotationOut])
+def list_annotations(
+    capture_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AnnotationOut]:
+    capture, _device = _load(db, user, capture_id)
+    return _annotation_out(db, capture.id)
+
+
+@router.post("/{capture_id}/annotations", response_model=AnnotationOut, status_code=201)
+def create_annotation(
+    capture_id: UUID,
+    body: AnnotationCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_writer),
+) -> AnnotationOut:
+    from fastapi import HTTPException
+
+    capture, _device = _load(db, user, capture_id)
+    species = db.get(Species, body.species_id)
+    if species is None:
+        raise HTTPException(status_code=422, detail="Espécie não encontrada")
+    if capture.width is not None and body.x + body.width > capture.width:
+        raise HTTPException(status_code=422, detail="A caixa passa da largura da foto")
+    if capture.height is not None and body.y + body.height > capture.height:
+        raise HTTPException(status_code=422, detail="A caixa passa da altura da foto")
+    row = CaptureAnnotation(
+        capture_id=capture.id,
+        species_id=species.id,
+        x=body.x,
+        y=body.y,
+        width=body.width,
+        height=body.height,
+        source="human",
+    )
+    capture.label = "with_pest"
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _one_annotation(row, species)
+
+
+@router.delete("/{capture_id}/annotations/{annotation_id}", status_code=204)
+def delete_annotation(
+    capture_id: UUID,
+    annotation_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_writer),
+) -> None:
+    from fastapi import HTTPException
+
+    capture, _device = _load(db, user, capture_id)
+    row = db.get(CaptureAnnotation, annotation_id)
+    if row is None or row.capture_id != capture.id or row.source != "human":
+        raise HTTPException(status_code=404, detail="Marcação não encontrada")
+    db.delete(row)
+    db.flush()
+    remaining = db.scalar(
+        select(func.count()).select_from(CaptureAnnotation).where(
+            CaptureAnnotation.capture_id == capture.id,
+            CaptureAnnotation.source == "human",
+        )
+    )
+    if remaining == 0 and capture.label == "with_pest":
+        capture.label = "unlabeled"
+    db.commit()
+
+
 @router.patch("/{capture_id}", response_model=CaptureOut)
 def update_capture(
     capture_id: UUID,
@@ -287,6 +366,49 @@ def _archive_name(device_code: str, captured_at: datetime, capture_id: UUID) -> 
     code = re.sub(r"[^A-Za-z0-9_-]", "_", device_code).strip("_") or "armadilha"
     stamp = _utc(captured_at).strftime("%Y-%m-%dT%H-%M-%SZ")
     return f"{code}/{stamp}_{capture_id.hex[:8]}.jpg"
+
+
+def _export_boxes(db: Session, rows: list) -> dict:
+    payload = {}
+    for capture, device in rows:
+        name = _archive_name(device.code, capture.captured_at, capture.id)
+        payload[name] = [
+            {
+                "species": item.species_name,
+                "x": item.x,
+                "y": item.y,
+                "width": item.width,
+                "height": item.height,
+                "source": item.source,
+            }
+            for item in _annotation_out(db, capture.id)
+        ]
+    return payload
+
+
+def _annotation_out(db: Session, capture_id: UUID) -> list[AnnotationOut]:
+    rows = db.execute(
+        select(CaptureAnnotation, Species)
+        .join(Species, CaptureAnnotation.species_id == Species.id)
+        .where(CaptureAnnotation.capture_id == capture_id)
+        .order_by(CaptureAnnotation.created_at.asc())
+    ).all()
+    return [_one_annotation(row, species) for row, species in rows]
+
+
+def _one_annotation(row: CaptureAnnotation, species: Species) -> AnnotationOut:
+    return AnnotationOut(
+        id=row.id,
+        capture_id=row.capture_id,
+        species_id=species.id,
+        species_name=species.name,
+        x=row.x,
+        y=row.y,
+        width=row.width,
+        height=row.height,
+        source=row.source,
+        confidence=row.confidence,
+    )
 
 
 def _owned(user: User, device: Device) -> bool:
