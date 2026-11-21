@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_gateway
 from app.db.models import Capture, Firmware, Gateway, Metric
 from app.db.session import get_db
-from app.schemas import FirmwareOut, IngestOut, MetricIn
+from app.schemas import FirmwareOut, FrameConfigOut, IngestOut, MetricIn
 from app.services.capture_events import capture_broker, capture_event
 from app.services.devices import as_utc, get_or_create_device, normalize_code, parse_iso_datetime
 from app.services.firmware import needs_update, require_target, resolve_firmware
+from app.services.framesize import FRAME_SIZES, recorded_quality, recorded_size
 from app.services.storage import MAX_IMAGE_BYTES, delete_capture_file, save_jpeg
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -27,6 +28,8 @@ async def ingest_image(
     device_code: str = Form(),
     captured_at: str = Form(),
     image: UploadFile = File(),
+    frame_size: str | None = Form(default=None),
+    jpeg_quality: str | None = Form(default=None),
     db: Session = Depends(get_db),
     gateway: Gateway = Depends(get_gateway),
 ) -> IngestOut:
@@ -38,6 +41,8 @@ async def ingest_image(
         raise HTTPException(status_code=413, detail="A imagem excede 5 MB")
     if len(content) < 3 or content[:3] != b"\xff\xd8\xff":
         raise HTTPException(status_code=422, detail="O arquivo precisa ser um JPEG")
+    token, width, height = recorded_size(content, frame_size)
+    quality = recorded_quality(jpeg_quality)
 
     device = get_or_create_device(db, code)
     now = datetime.now(timezone.utc)
@@ -50,6 +55,10 @@ async def ingest_image(
         received_at=now,
         file_path=relative,
         size_bytes=len(content),
+        frame_size=token,
+        jpeg_quality=quality,
+        width=width,
+        height=height,
         label="unlabeled",
     )
     _touch(gateway, device, now)
@@ -90,6 +99,20 @@ def ingest_metric(
     db.commit()
     db.refresh(metric)
     return IngestOut(id=metric.id)
+
+
+@router.get("/config", response_model=FrameConfigOut)
+def device_config(
+    device_code: str = Query(min_length=1),
+    db: Session = Depends(get_db),
+    gateway: Gateway = Depends(get_gateway),
+) -> FrameConfigOut:
+    code = normalize_code(device_code)
+    device = get_or_create_device(db, code)
+    _touch(gateway, device, datetime.now(timezone.utc))
+    db.commit()
+    width, height = FRAME_SIZES[device.frame_size]
+    return FrameConfigOut(frame_size=device.frame_size, width=width, height=height, jpeg_quality=device.jpeg_quality)
 
 
 def _published(db: Session, target: str) -> Firmware:

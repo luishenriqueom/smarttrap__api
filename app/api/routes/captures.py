@@ -50,6 +50,10 @@ def _to_out(capture: Capture, device: Device) -> CaptureOut:
         captured_at=capture.captured_at,
         received_at=capture.received_at,
         size_bytes=capture.size_bytes,
+        frame_size=capture.frame_size,
+        jpeg_quality=capture.jpeg_quality,
+        width=capture.width,
+        height=capture.height,
         manual_count=capture.manual_count,
         label=capture.label,
         notes=capture.notes,
@@ -114,7 +118,9 @@ def export_captures(
     with zipfile.ZipFile(spool, "w", compression=zipfile.ZIP_STORED) as archive:
         manifest = io.StringIO()
         writer = csv.writer(manifest)
-        writer.writerow(["arquivo", "codigo", "armadilha", "capturado_em", "rotulo", "contagem_manual", "notas"])
+        writer.writerow(
+            ["arquivo", "codigo", "armadilha", "capturado_em", "rotulo", "contagem_manual", "notas", "resolucao", "qualidade_jpeg"]
+        )
         for capture, device in rows:
             path = resolve_capture(capture.file_path)
             if not path.is_file():
@@ -130,6 +136,8 @@ def export_captures(
                     capture.label,
                     "" if capture.manual_count is None else capture.manual_count,
                     capture.notes or "",
+                    "" if capture.width is None or capture.height is None else f"{capture.width}x{capture.height}",
+                    "" if capture.jpeg_quality is None else capture.jpeg_quality,
                 ]
             )
             written += 1

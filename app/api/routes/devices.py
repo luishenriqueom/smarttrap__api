@@ -18,6 +18,7 @@ from app.services.devices import (
     require_owner,
     visible_devices_query,
 )
+from app.services.framesize import DEFAULT_FRAME_SIZE, DEFAULT_JPEG_QUALITY, require_frame_size, require_jpeg_quality
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -35,6 +36,8 @@ def to_device_out(device: Device, last_metric, capture_count: int) -> DeviceOut:
         created_at=device.created_at,
         last_metric=MetricOut.model_validate(last_metric) if last_metric is not None else None,
         capture_count=capture_count,
+        frame_size=device.frame_size,
+        jpeg_quality=device.jpeg_quality,
     )
 
 
@@ -78,7 +81,16 @@ def create_device(
         raise HTTPException(status_code=403, detail="Apenas o SuperAdmin altera o dono")
     owner_id = body.owner_id if body.owner_id is not None and is_superadmin(user) else user.id
     require_owner(db, owner_id)
-    device = Device(code=code, name=body.name.strip(), location=_clean_location(body.location), owner_id=owner_id)
+    frame_size = require_frame_size(body.frame_size) if body.frame_size is not None else DEFAULT_FRAME_SIZE
+    jpeg_quality = require_jpeg_quality(body.jpeg_quality) if body.jpeg_quality is not None else DEFAULT_JPEG_QUALITY
+    device = Device(
+        code=code,
+        name=body.name.strip(),
+        location=_clean_location(body.location),
+        owner_id=owner_id,
+        frame_size=frame_size,
+        jpeg_quality=jpeg_quality,
+    )
     db.add(device)
     db.commit()
     db.expire_all()
@@ -116,6 +128,14 @@ def update_device(
         device.name = body.name.strip()
     if "location" in changes:
         device.location = _clean_location(body.location)
+    if "frame_size" in changes:
+        if body.frame_size is None:
+            raise HTTPException(status_code=422, detail="Informe a resolução")
+        device.frame_size = require_frame_size(body.frame_size)
+    if "jpeg_quality" in changes:
+        if body.jpeg_quality is None:
+            raise HTTPException(status_code=422, detail="Informe a qualidade JPEG")
+        device.jpeg_quality = require_jpeg_quality(body.jpeg_quality)
     db.commit()
     db.expire_all()
     loaded = get_visible_device(db, user, device.id)

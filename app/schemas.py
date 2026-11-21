@@ -66,6 +66,8 @@ class DeviceOut(BaseModel):
     created_at: datetime
     last_metric: MetricOut | None
     capture_count: int
+    frame_size: str
+    jpeg_quality: int
 
 
 class DeviceCreate(BaseModel):
@@ -73,12 +75,23 @@ class DeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     location: str | None = Field(default=None, max_length=255)
     owner_id: UUID | None = None
+    frame_size: str | None = None
+    jpeg_quality: int | None = None
 
 
 class DeviceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     location: str | None = Field(default=None, max_length=255)
     owner_id: UUID | None = None
+    frame_size: str | None = None
+    jpeg_quality: int | None = None
+
+
+class FrameConfigOut(BaseModel):
+    frame_size: str
+    width: int
+    height: int
+    jpeg_quality: int
 
 
 class CaptureOut(BaseModel):
@@ -89,6 +102,10 @@ class CaptureOut(BaseModel):
     captured_at: datetime
     received_at: datetime
     size_bytes: int
+    frame_size: str | None
+    jpeg_quality: int | None
+    width: int | None
+    height: int | None
     manual_count: int | None
     label: str
     notes: str | None
