@@ -54,6 +54,7 @@ def capture_event(capture: Capture, device: Device) -> dict:
             manual_count=capture.manual_count,
             label=capture.label,
             notes=capture.notes,
+            mark_count=0,
         )
     )
     payload["owner_id"] = str(device.owner_id)

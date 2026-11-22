@@ -54,7 +54,18 @@ def _filters(user: User, device_id: UUID | None, start: datetime | None, end: da
     return filters
 
 
-def _to_out(capture: Capture, device: Device) -> CaptureOut:
+def _mark_counts(db: Session, capture_ids: list[UUID]) -> dict[UUID, int]:
+    if not capture_ids:
+        return {}
+    rows = db.execute(
+        select(CaptureAnnotation.capture_id, func.count())
+        .where(CaptureAnnotation.capture_id.in_(capture_ids), CaptureAnnotation.source == "human")
+        .group_by(CaptureAnnotation.capture_id)
+    ).all()
+    return {capture_id: int(count) for capture_id, count in rows}
+
+
+def _to_out(capture: Capture, device: Device, mark_count: int = 0) -> CaptureOut:
     return CaptureOut(
         id=capture.id,
         device_id=capture.device_id,
@@ -70,6 +81,7 @@ def _to_out(capture: Capture, device: Device) -> CaptureOut:
         manual_count=capture.manual_count,
         label=capture.label,
         notes=capture.notes,
+        mark_count=mark_count,
     )
 
 
@@ -82,19 +94,28 @@ def list_captures(
     end: datetime | None = Query(default=None, alias="to"),
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    marked: bool | None = None,
 ) -> CapturePage:
     filters = _filters(user, device_id, start, end)
-    total = db.scalar(select(func.count()).select_from(Capture).join(Device).where(*filters)) or 0
-    rows = db.execute(
-        select(Capture, Device)
-        .join(Device, Capture.device_id == Device.id)
-        .where(*filters)
-        .order_by(Capture.captured_at.desc())
-        .limit(limit)
-        .offset(offset)
-    ).all()
+    human = (
+        select(CaptureAnnotation.capture_id, func.count().label("mark_count"))
+        .where(CaptureAnnotation.source == "human")
+        .group_by(CaptureAnnotation.capture_id)
+        .subquery()
+    )
+    marked_count = func.coalesce(human.c.mark_count, 0)
+    base = select(Capture, Device, marked_count).join(Device, Capture.device_id == Device.id).outerjoin(human, human.c.capture_id == Capture.id).where(*filters)
+    count_from = select(func.count()).select_from(Capture).join(Device, Capture.device_id == Device.id).outerjoin(human, human.c.capture_id == Capture.id).where(*filters)
+    if marked is True:
+        base = base.where(marked_count > 0)
+        count_from = count_from.where(marked_count > 0)
+    elif marked is False:
+        base = base.where(marked_count == 0)
+        count_from = count_from.where(marked_count == 0)
+    total = db.scalar(count_from) or 0
+    rows = db.execute(base.order_by(Capture.captured_at.desc()).limit(limit).offset(offset)).all()
     return CapturePage(
-        items=[_to_out(capture, device) for capture, device in rows],
+        items=[_to_out(capture, device, int(mark_count)) for capture, device, mark_count in rows],
         total=total,
         limit=limit,
         offset=offset,
@@ -313,7 +334,7 @@ def get_capture(
     user: User = Depends(get_current_user),
 ) -> CaptureOut:
     capture, device = _load(db, user, capture_id)
-    return _to_out(capture, device)
+    return _to_out(capture, device, _mark_counts(db, [capture.id]).get(capture.id, 0))
 
 
 @router.get("/{capture_id}/image")
@@ -451,7 +472,7 @@ def update_capture(
     db.commit()
     db.refresh(capture)
     device = db.get(Device, capture.device_id)
-    return _to_out(capture, device)
+    return _to_out(capture, device, _mark_counts(db, [capture.id]).get(capture.id, 0))
 
 
 def _utc(moment: datetime) -> datetime:

@@ -61,7 +61,12 @@ def test_human_box_is_exported_and_device_box_arrives_with_the_photo(client):
         headers=admin,
     )
     assert marked.status_code == 201, marked.text
-    assert client.get(f"/api/v1/captures/{capture_id}", headers=admin).json()["label"] == "with_pest"
+    detail = client.get(f"/api/v1/captures/{capture_id}", headers=admin).json()
+    assert detail["label"] == "with_pest"
+    assert detail["mark_count"] == 1
+    only_marked = client.get("/api/v1/captures", params={"marked": "true"}, headers=admin)
+    assert only_marked.status_code == 200, only_marked.text
+    assert any(item["id"] == capture_id and item["mark_count"] == 1 for item in only_marked.json()["items"])
 
     exported = client.get(
         "/api/v1/captures/export",
@@ -98,6 +103,7 @@ def test_human_box_is_exported_and_device_box_arrives_with_the_photo(client):
     assert listed.status_code == 200, listed.text
     assert listed.json()[0]["source"] == "device"
     assert listed.json()[0]["species_name"] == "mosca"
+    assert client.get(f"/api/v1/captures/{detected.json()['id']}", headers=admin).json()["mark_count"] == 0
     blocked = client.patch(
         f"/api/v1/captures/{detected.json()['id']}/annotations/{listed.json()[0]['id']}",
         json={"species_id": species_id, "x": 1, "y": 1, "width": 8, "height": 8},

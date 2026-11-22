@@ -115,6 +115,7 @@ class CaptureOut(BaseModel):
     manual_count: int | None
     label: str
     notes: str | None
+    mark_count: int = 0
 
 
 class CaptureUpdate(BaseModel):
