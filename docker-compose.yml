@@ -33,7 +33,11 @@ services:
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-dev-gateway-key}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       CAPTURES_DIR: /app/data/captures
+      FIRMWARE_DIR: /app/data/firmware
       MODELS_DIR: /app/data/models
+      EI_API_KEY: ${EI_API_KEY:-}
+      EI_PROJECT_ID: ${EI_PROJECT_ID:-0}
+      EI_LEARN_ID: ${EI_LEARN_ID:-0}
     volumes:
       - ./data/captures:/app/data/captures
       - ./data/firmware:/app/data/firmware
