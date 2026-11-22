@@ -232,6 +232,10 @@ class AnnotationCreate(BaseModel):
     height: int = Field(ge=1)
 
 
+class AnnotationUpdate(AnnotationCreate):
+    pass
+
+
 class ModelOut(BaseModel):
     id: UUID
     status: str

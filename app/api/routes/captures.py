@@ -21,6 +21,7 @@ from app.db.session import SessionLocal, get_db
 from app.schemas import (
     AnnotationCreate,
     AnnotationOut,
+    AnnotationUpdate,
     CaptureDiscardResult,
     CaptureIds,
     CaptureImportResult,
@@ -368,6 +369,35 @@ def create_annotation(
     )
     capture.label = "with_pest"
     db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _one_annotation(row, species)
+
+
+@router.patch("/{capture_id}/annotations/{annotation_id}", response_model=AnnotationOut)
+def update_annotation(
+    capture_id: UUID,
+    annotation_id: UUID,
+    body: AnnotationUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_writer),
+) -> AnnotationOut:
+    capture, _device = _load(db, user, capture_id)
+    row = db.get(CaptureAnnotation, annotation_id)
+    if row is None or row.capture_id != capture.id or row.source != "human":
+        raise HTTPException(status_code=404, detail="Marcação não encontrada")
+    species = db.get(Species, body.species_id)
+    if species is None:
+        raise HTTPException(status_code=422, detail="Espécie não encontrada")
+    if capture.width is not None and body.x + body.width > capture.width:
+        raise HTTPException(status_code=422, detail="A caixa passa da largura da foto")
+    if capture.height is not None and body.y + body.height > capture.height:
+        raise HTTPException(status_code=422, detail="A caixa passa da altura da foto")
+    row.species_id = species.id
+    row.x = body.x
+    row.y = body.y
+    row.width = body.width
+    row.height = body.height
     db.commit()
     db.refresh(row)
     return _one_annotation(row, species)

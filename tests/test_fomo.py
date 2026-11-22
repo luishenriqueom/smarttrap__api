@@ -73,6 +73,15 @@ def test_human_box_is_exported_and_device_box_arrives_with_the_photo(client):
     saved = next(iter(boxes.values()))
     assert saved[0]["species"] == "mosca"
     assert saved[0]["source"] == "human"
+    other = client.post("/api/v1/species", json={"name": "besouro"}, headers=admin)
+    changed = client.patch(
+        f"/api/v1/captures/{capture_id}/annotations/{marked.json()['id']}",
+        json={"species_id": other.json()["id"], "x": 8, "y": 9, "width": 20, "height": 16},
+        headers=admin,
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["species_name"] == "besouro"
+    assert changed.json()["width"] == 20
 
     detected = client.post(
         "/api/v1/ingest/images",
@@ -89,6 +98,12 @@ def test_human_box_is_exported_and_device_box_arrives_with_the_photo(client):
     assert listed.status_code == 200, listed.text
     assert listed.json()[0]["source"] == "device"
     assert listed.json()[0]["species_name"] == "mosca"
+    blocked = client.patch(
+        f"/api/v1/captures/{detected.json()['id']}/annotations/{listed.json()[0]['id']}",
+        json={"species_id": species_id, "x": 1, "y": 1, "width": 8, "height": 8},
+        headers=admin,
+    )
+    assert blocked.status_code == 404
 
 
 def test_training_requires_edge_impulse_configuration(client):
