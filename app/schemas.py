@@ -135,6 +135,11 @@ class CaptureRestoreResult(BaseModel):
     restored: int
 
 
+class CaptureImportResult(BaseModel):
+    imported: int
+    skipped: int
+
+
 class DevicePage(BaseModel):
     items: list[DeviceOut]
     total: int
