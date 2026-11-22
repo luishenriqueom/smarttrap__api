@@ -72,6 +72,13 @@ def _train(session: Session, model_id) -> None:
     chosen = positives + negatives[: max(1, len(positives) * NEGATIVE_CAP_RATIO)]
     headers = {"x-api-key": settings.ei_api_key}
     with httpx.Client(timeout=120) as client:
+        _studio(
+            client,
+            "POST",
+            "",
+            headers,
+            json={"labelingMethod": "object_detection"},
+        )
         for index, tile in enumerate(chosen):
             extra = {"x-bounding-boxes": json.dumps(tile["boxes"])} if tile["boxes"] else {"x-no-label": "1"}
             response = client.post(
@@ -81,24 +88,26 @@ def _train(session: Session, model_id) -> None:
             )
             if response.status_code >= 300:
                 raise RuntimeError(f"Falha ao enviar recorte: {response.status_code} {response.text[:240]}")
-        train = client.post(
-            f"{STUDIO}/{settings.ei_project_id}/jobs/train/keras/{settings.ei_learn_id}",
-            headers={**headers, "Content-Type": "application/json"},
-            json={"mode": "visual", "trainingCycles": 30, "learningRate": 0.001},
+        train = _studio(
+            client,
+            "POST",
+            f"/jobs/train/keras/{settings.ei_learn_id}",
+            headers,
+            json={"trainingCycles": 30, "learningRate": 0.001},
         )
-        train.raise_for_status()
         train_body = train.json()
         if not train_body.get("success", True):
             raise RuntimeError(train_body.get("error") or "O treino não iniciou")
         job_id = train_body.get("id")
         _wait_job(client, headers, job_id)
-        build = client.post(
-            f"{STUDIO}/{settings.ei_project_id}/jobs/build-ondevice-model",
+        build = _studio(
+            client,
+            "POST",
+            "/jobs/build-ondevice-model",
+            headers,
             params={"type": "zip"},
-            headers={**headers, "Content-Type": "application/json"},
             json={"engine": "tflite", "modelType": "int8"},
         )
-        build.raise_for_status()
         build_body = build.json()
         if not build_body.get("success", True):
             raise RuntimeError(build_body.get("error") or "A exportação não iniciou")
@@ -129,6 +138,23 @@ def _train(session: Session, model_id) -> None:
     row.error = None
     row.metrics = {"tiles": len(chosen), "positives": len(positives)}
     session.commit()
+
+
+def _studio(client: httpx.Client, method: str, path: str, headers: dict, **kwargs) -> httpx.Response:
+    response = client.request(
+        method,
+        f"{STUDIO}/{settings.ei_project_id}{path}",
+        headers={**headers, "Content-Type": "application/json"},
+        **kwargs,
+    )
+    if response.status_code == 403:
+        raise RuntimeError(
+            "A chave do Edge Impulse não tem permissão para treinar. "
+            "No projeto, abra Dashboard, Keys, Add new API key, escolha o papel Admin (full access) "
+            "e substitua a EI_API_KEY. A chave atual envia fotos, mas não inicia o treino."
+        )
+    response.raise_for_status()
+    return response
 
 
 def _wait_job(client: httpx.Client, headers: dict, job_id) -> None:
