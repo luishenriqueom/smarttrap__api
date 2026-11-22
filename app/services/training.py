@@ -88,6 +88,18 @@ def _train(session: Session, model_id) -> None:
             )
             if response.status_code >= 300:
                 raise RuntimeError(f"Falha ao enviar recorte: {response.status_code} {response.text[:240]}")
+        dsp_id = _image_dsp_id(client, headers)
+        features = _studio(
+            client,
+            "POST",
+            "/jobs/generate-features",
+            headers,
+            json={"dspId": dsp_id, "calculateFeatureImportance": False, "skipFeatureExplorer": True},
+        )
+        features_body = features.json()
+        if not features_body.get("success", True):
+            raise RuntimeError(features_body.get("error") or "A geração de features não iniciou")
+        _wait_job(client, headers, features_body.get("id"))
         train = _studio(
             client,
             "POST",
@@ -140,6 +152,20 @@ def _train(session: Session, model_id) -> None:
     session.commit()
 
 
+def _image_dsp_id(client: httpx.Client, headers: dict) -> int:
+    response = _studio(client, "GET", "/impulse", headers)
+    blocks = ((response.json().get("impulse") or {}).get("dspBlocks")) or []
+    for block in blocks:
+        if str(block.get("type") or "").lower() == "image":
+            return int(block["id"])
+    named = [block for block in blocks if "image" in str(block.get("name") or block.get("title") or "").lower()]
+    if len(named) == 1:
+        return int(named[0]["id"])
+    if len(blocks) == 1:
+        return int(blocks[0]["id"])
+    raise RuntimeError("O impulso não tem um bloco Image para gerar as features")
+
+
 def _studio(client: httpx.Client, method: str, path: str, headers: dict, **kwargs) -> httpx.Response:
     response = client.request(
         method,
@@ -167,7 +193,8 @@ def _wait_job(client: httpx.Client, headers: dict, job_id) -> None:
         job = body.get("job") or {}
         if job.get("finished"):
             if not job.get("finishedSuccessful", False):
-                raise RuntimeError("O job do Edge Impulse falhou")
+                detail = job.get("error") or job.get("additionalInfo") or ""
+                raise RuntimeError(f"O job do Edge Impulse falhou. {detail}".strip())
             return
         import time
 
