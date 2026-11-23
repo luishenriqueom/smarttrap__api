@@ -10,10 +10,22 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_gateway
 from app.db.models import Capture, CaptureAnnotation, Device, Firmware, Gateway, Metric, Species, TrainedModel
 from app.db.session import get_db
-from app.schemas import ClockIn, ClockSyncList, ClockSyncItem, FirmwareOut, FrameConfigOut, IngestOut, MetricIn, ModelMetaOut
+from app.schemas import (
+    ClockIn,
+    ClockSyncItem,
+    ClockSyncList,
+    DeviceModeItem,
+    DeviceModeList,
+    FirmwareOut,
+    FrameConfigOut,
+    IngestOut,
+    MetricIn,
+    ModelMetaOut,
+)
 from app.services.capture_events import capture_broker, capture_event
 from app.services.devices import (
     apply_reported_clock,
+    apply_reported_mode,
     as_utc,
     get_or_create_device,
     normalize_code,
@@ -42,6 +54,7 @@ async def ingest_image(
     jpeg_quality: str | None = Form(default=None),
     detections: str | None = Form(default=None),
     device_time: str | None = Form(default=None),
+    operating_mode: str | None = Form(default=None),
     db: Session = Depends(get_db),
     gateway: Gateway = Depends(get_gateway),
 ) -> IngestOut:
@@ -59,6 +72,7 @@ async def ingest_image(
     device = get_or_create_device(db, code)
     now = datetime.now(timezone.utc)
     apply_reported_clock(device, parse_device_time(device_time), now)
+    apply_reported_mode(device, operating_mode)
     capture_id = uuid.uuid4()
     relative = save_jpeg(code, capture_id, taken_at, content)
     capture = Capture(
@@ -98,6 +112,7 @@ def ingest_metric(
     device = get_or_create_device(db, code)
     now = datetime.now(timezone.utc)
     apply_reported_clock(device, body.device_time, now)
+    apply_reported_mode(device, body.operating_mode)
     metric = Metric(
         device_id=device.id,
         recorded_at=as_utc(body.recorded_at),
@@ -120,6 +135,7 @@ def ingest_metric(
 def device_config(
     device_code: str = Query(min_length=1),
     device_time: int | None = Query(default=None, ge=0, le=0xFFFFFFFF),
+    operating_mode: str | None = Query(default=None),
     db: Session = Depends(get_db),
     gateway: Gateway = Depends(get_gateway),
 ) -> FrameConfigOut:
@@ -127,6 +143,7 @@ def device_config(
     device = get_or_create_device(db, code)
     now = datetime.now(timezone.utc)
     apply_reported_clock(device, device_time, now)
+    apply_reported_mode(device, operating_mode)
     _touch(gateway, device, now)
     db.commit()
     width, height = FRAME_SIZES[device.frame_size]
@@ -136,6 +153,7 @@ def device_config(
         height=height,
         jpeg_quality=device.jpeg_quality,
         sleep_seconds=device.sleep_seconds,
+        operating_mode=device.operating_mode,
         set_time=int(now.timestamp()) if device.clock_sync_requested else None,
     )
 
@@ -149,9 +167,19 @@ def ingest_clock(
     device = get_or_create_device(db, normalize_code(body.device_code))
     now = datetime.now(timezone.utc)
     apply_reported_clock(device, body.device_time, now)
+    apply_reported_mode(device, body.operating_mode)
     _touch(gateway, device, now)
     db.commit()
     return Response(status_code=204)
+
+
+@router.get("/modes", response_model=DeviceModeList)
+def device_modes(
+    db: Session = Depends(get_db),
+    _gateway: Gateway = Depends(get_gateway),
+) -> DeviceModeList:
+    rows = db.scalars(select(Device).order_by(Device.code)).all()
+    return DeviceModeList(items=[DeviceModeItem(device_code=row.code, operating_mode=row.operating_mode) for row in rows])
 
 
 @router.get("/clock-sync", response_model=ClockSyncList)

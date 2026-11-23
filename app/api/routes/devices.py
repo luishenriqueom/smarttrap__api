@@ -21,9 +21,11 @@ from app.services.devices import (
 from app.services.framesize import (
     DEFAULT_FRAME_SIZE,
     DEFAULT_JPEG_QUALITY,
+    DEFAULT_OPERATING_MODE,
     DEFAULT_SLEEP_SECONDS,
     require_frame_size,
     require_jpeg_quality,
+    require_operating_mode,
     require_sleep_seconds,
 )
 
@@ -50,6 +52,8 @@ def to_device_out(device: Device, last_metric, capture_count: int) -> DeviceOut:
         last_clock_at=device.last_clock_at,
         last_clock_received_at=device.last_clock_received_at,
         clock_sync_requested=device.clock_sync_requested,
+        operating_mode=device.operating_mode,
+        reported_mode=device.reported_mode,
     )
 
 
@@ -96,6 +100,7 @@ def create_device(
     frame_size = require_frame_size(body.frame_size) if body.frame_size is not None else DEFAULT_FRAME_SIZE
     jpeg_quality = require_jpeg_quality(body.jpeg_quality) if body.jpeg_quality is not None else DEFAULT_JPEG_QUALITY
     sleep_seconds = require_sleep_seconds(body.sleep_seconds) if body.sleep_seconds is not None else DEFAULT_SLEEP_SECONDS
+    operating_mode = require_operating_mode(body.operating_mode) if body.operating_mode is not None else DEFAULT_OPERATING_MODE
     device = Device(
         code=code,
         name=body.name.strip(),
@@ -104,6 +109,7 @@ def create_device(
         frame_size=frame_size,
         jpeg_quality=jpeg_quality,
         sleep_seconds=sleep_seconds,
+        operating_mode=operating_mode,
     )
     db.add(device)
     db.commit()
@@ -154,6 +160,10 @@ def update_device(
         if body.sleep_seconds is None:
             raise HTTPException(status_code=422, detail="Informe o intervalo de sono")
         device.sleep_seconds = require_sleep_seconds(body.sleep_seconds)
+    if "operating_mode" in changes:
+        if body.operating_mode is None:
+            raise HTTPException(status_code=422, detail="Informe o modo")
+        device.operating_mode = require_operating_mode(body.operating_mode)
     if "model_id" in changes:
         if body.model_id is None:
             device.model_id = None

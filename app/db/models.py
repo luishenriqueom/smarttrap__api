@@ -47,6 +47,8 @@ class Device(Base):
     frame_size: Mapped[str] = mapped_column(String(8), default="svga", server_default="svga")
     jpeg_quality: Mapped[int] = mapped_column(Integer, default=12, server_default="12")
     sleep_seconds: Mapped[int] = mapped_column(Integer, default=300, server_default="300")
+    operating_mode: Mapped[str] = mapped_column(String(16), default="collect", server_default="collect")
+    reported_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     model_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("models.id"), nullable=True)
     last_clock_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_clock_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

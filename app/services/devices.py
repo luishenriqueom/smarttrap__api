@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.models import Capture, Device, Metric, User
+from app.services.framesize import require_operating_mode
 
 CODE_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 ONLINE_WINDOW = timedelta(minutes=15)
@@ -39,6 +40,12 @@ def parse_iso_datetime(value: str) -> datetime:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Data inválida. Use ISO-8601.") from exc
     return as_utc(parsed)
+
+
+def apply_reported_mode(device: Device, raw: str | None) -> None:
+    if raw is None or raw.strip() == "":
+        return
+    device.reported_mode = require_operating_mode(raw)
 
 
 def apply_reported_clock(device: Device, unix_time: int | None, now: datetime) -> None:

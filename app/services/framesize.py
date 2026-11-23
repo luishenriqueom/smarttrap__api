@@ -14,6 +14,8 @@ DEFAULT_JPEG_QUALITY = 12
 MIN_JPEG_QUALITY = 4
 MAX_JPEG_QUALITY = 63
 DEFAULT_SLEEP_SECONDS = 300
+DEFAULT_OPERATING_MODE = "collect"
+OPERATING_MODES = {"collect", "infer"}
 MIN_SLEEP_SECONDS = 60
 MAX_SLEEP_SECONDS = 86400
 _SOF = {0xC0, 0xC1, 0xC2, 0xC3}
@@ -30,6 +32,13 @@ def require_sleep_seconds(value: int) -> int:
     if value < MIN_SLEEP_SECONDS or value > MAX_SLEEP_SECONDS:
         raise HTTPException(status_code=422, detail="O intervalo de sono deve ficar entre 1 minuto e 24 horas")
     return value
+
+
+def require_operating_mode(value: str) -> str:
+    token = value.strip().lower()
+    if token not in OPERATING_MODES:
+        raise HTTPException(status_code=422, detail="Modo inválido")
+    return token
 
 
 def require_jpeg_quality(value: int) -> int:
