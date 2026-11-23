@@ -48,6 +48,9 @@ class Device(Base):
     jpeg_quality: Mapped[int] = mapped_column(Integer, default=12, server_default="12")
     sleep_seconds: Mapped[int] = mapped_column(Integer, default=300, server_default="300")
     model_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("models.id"), nullable=True)
+    last_clock_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_clock_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    clock_sync_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

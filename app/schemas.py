@@ -70,6 +70,9 @@ class DeviceOut(BaseModel):
     jpeg_quality: int
     sleep_seconds: int
     model_id: UUID | None
+    last_clock_at: datetime | None
+    last_clock_received_at: datetime | None
+    clock_sync_requested: bool
 
 
 class DeviceCreate(BaseModel):
@@ -98,6 +101,7 @@ class FrameConfigOut(BaseModel):
     height: int
     jpeg_quality: int
     sleep_seconds: int
+    set_time: int | None = None
 
 
 class CaptureOut(BaseModel):
@@ -173,10 +177,24 @@ class MetricIn(BaseModel):
     rssi: float | None = None
     snr: float | None = None
     firmware_version: int | None = Field(default=None, ge=0, le=65535)
+    device_time: int | None = Field(default=None, ge=0, le=0xFFFFFFFF)
 
 
 class IngestOut(BaseModel):
     id: UUID
+
+
+class ClockIn(BaseModel):
+    device_code: str
+    device_time: int = Field(ge=0, le=0xFFFFFFFF)
+
+
+class ClockSyncItem(BaseModel):
+    device_code: str
+
+
+class ClockSyncList(BaseModel):
+    items: list[ClockSyncItem]
 
 
 class SeriesPoint(BaseModel):

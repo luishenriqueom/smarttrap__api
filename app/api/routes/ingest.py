@@ -8,11 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_gateway
-from app.db.models import Capture, CaptureAnnotation, Firmware, Gateway, Metric, Species, TrainedModel
+from app.db.models import Capture, CaptureAnnotation, Device, Firmware, Gateway, Metric, Species, TrainedModel
 from app.db.session import get_db
-from app.schemas import FirmwareOut, FrameConfigOut, IngestOut, MetricIn, ModelMetaOut
+from app.schemas import ClockIn, ClockSyncList, ClockSyncItem, FirmwareOut, FrameConfigOut, IngestOut, MetricIn, ModelMetaOut
 from app.services.capture_events import capture_broker, capture_event
-from app.services.devices import as_utc, get_or_create_device, normalize_code, parse_iso_datetime
+from app.services.devices import (
+    apply_reported_clock,
+    as_utc,
+    get_or_create_device,
+    normalize_code,
+    parse_device_time,
+    parse_iso_datetime,
+)
 from app.services.firmware import needs_update, require_target, resolve_firmware
 from app.services.framesize import FRAME_SIZES, recorded_quality, recorded_size
 from app.services.storage import MAX_IMAGE_BYTES, delete_capture_file, save_jpeg
@@ -34,6 +41,7 @@ async def ingest_image(
     frame_size: str | None = Form(default=None),
     jpeg_quality: str | None = Form(default=None),
     detections: str | None = Form(default=None),
+    device_time: str | None = Form(default=None),
     db: Session = Depends(get_db),
     gateway: Gateway = Depends(get_gateway),
 ) -> IngestOut:
@@ -50,6 +58,7 @@ async def ingest_image(
 
     device = get_or_create_device(db, code)
     now = datetime.now(timezone.utc)
+    apply_reported_clock(device, parse_device_time(device_time), now)
     capture_id = uuid.uuid4()
     relative = save_jpeg(code, capture_id, taken_at, content)
     capture = Capture(
@@ -88,6 +97,7 @@ def ingest_metric(
     code = normalize_code(body.device_code)
     device = get_or_create_device(db, code)
     now = datetime.now(timezone.utc)
+    apply_reported_clock(device, body.device_time, now)
     metric = Metric(
         device_id=device.id,
         recorded_at=as_utc(body.recorded_at),
@@ -106,15 +116,18 @@ def ingest_metric(
     return IngestOut(id=metric.id)
 
 
-@router.get("/config", response_model=FrameConfigOut)
+@router.get("/config", response_model=FrameConfigOut, response_model_exclude_none=True)
 def device_config(
     device_code: str = Query(min_length=1),
+    device_time: int | None = Query(default=None, ge=0, le=0xFFFFFFFF),
     db: Session = Depends(get_db),
     gateway: Gateway = Depends(get_gateway),
 ) -> FrameConfigOut:
     code = normalize_code(device_code)
     device = get_or_create_device(db, code)
-    _touch(gateway, device, datetime.now(timezone.utc))
+    now = datetime.now(timezone.utc)
+    apply_reported_clock(device, device_time, now)
+    _touch(gateway, device, now)
     db.commit()
     width, height = FRAME_SIZES[device.frame_size]
     return FrameConfigOut(
@@ -123,7 +136,31 @@ def device_config(
         height=height,
         jpeg_quality=device.jpeg_quality,
         sleep_seconds=device.sleep_seconds,
+        set_time=int(now.timestamp()) if device.clock_sync_requested else None,
     )
+
+
+@router.post("/clock", status_code=204)
+def ingest_clock(
+    body: ClockIn,
+    db: Session = Depends(get_db),
+    gateway: Gateway = Depends(get_gateway),
+) -> Response:
+    device = get_or_create_device(db, normalize_code(body.device_code))
+    now = datetime.now(timezone.utc)
+    apply_reported_clock(device, body.device_time, now)
+    _touch(gateway, device, now)
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.get("/clock-sync", response_model=ClockSyncList)
+def pending_clock_sync(
+    db: Session = Depends(get_db),
+    _gateway: Gateway = Depends(get_gateway),
+) -> ClockSyncList:
+    rows = db.scalars(select(Device).where(Device.clock_sync_requested.is_(True)).order_by(Device.code)).all()
+    return ClockSyncList(items=[ClockSyncItem(device_code=row.code) for row in rows])
 
 
 def _assigned_model(db: Session, device_code: str) -> tuple[object, TrainedModel]:

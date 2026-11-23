@@ -10,6 +10,8 @@ from app.db.models import Capture, Device, Metric, User
 
 CODE_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 ONLINE_WINDOW = timedelta(minutes=15)
+CLOCK_EPOCH = 1_700_000_000
+CLOCK_SYNC_TOLERANCE = timedelta(seconds=120)
 
 
 def normalize_code(value: str) -> str:
@@ -37,6 +39,30 @@ def parse_iso_datetime(value: str) -> datetime:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Data inválida. Use ISO-8601.") from exc
     return as_utc(parsed)
+
+
+def apply_reported_clock(device: Device, unix_time: int | None, now: datetime) -> None:
+    if unix_time is None:
+        return
+    device.last_clock_received_at = now
+    if unix_time < CLOCK_EPOCH:
+        device.last_clock_at = None
+        return
+    reported = datetime.fromtimestamp(unix_time, timezone.utc)
+    device.last_clock_at = reported
+    if device.clock_sync_requested and abs(now - reported) <= CLOCK_SYNC_TOLERANCE:
+        device.clock_sync_requested = False
+
+
+def parse_device_time(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    text = raw.strip()
+    if text == "":
+        return None
+    if not text.isdigit() or int(text) > 0xFFFFFFFF:
+        raise HTTPException(status_code=422, detail="device_time inválido")
+    return int(text)
 
 
 def is_online(last_seen_at: datetime | None, now: datetime | None = None) -> bool:

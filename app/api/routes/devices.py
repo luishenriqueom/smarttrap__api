@@ -47,6 +47,9 @@ def to_device_out(device: Device, last_metric, capture_count: int) -> DeviceOut:
         jpeg_quality=device.jpeg_quality,
         sleep_seconds=device.sleep_seconds,
         model_id=device.model_id,
+        last_clock_at=device.last_clock_at,
+        last_clock_received_at=device.last_clock_received_at,
+        clock_sync_requested=device.clock_sync_requested,
     )
 
 
@@ -159,6 +162,20 @@ def update_device(
             if trained is None or trained.status != "ready":
                 raise HTTPException(status_code=422, detail="Escolha um modelo pronto")
             device.model_id = trained.id
+    db.commit()
+    db.expire_all()
+    loaded = get_visible_device(db, user, device.id)
+    return present(db, [loaded])[0]
+
+
+@router.post("/{device_id}/clock-sync", response_model=DeviceOut)
+def request_clock_sync(
+    device_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_writer),
+) -> DeviceOut:
+    device = get_visible_device(db, user, device_id)
+    device.clock_sync_requested = True
     db.commit()
     db.expire_all()
     loaded = get_visible_device(db, user, device.id)
