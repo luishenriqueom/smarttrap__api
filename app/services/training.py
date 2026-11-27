@@ -61,7 +61,7 @@ def _train(session: Session, model_id) -> None:
         return
     labels = [item.name for item in species]
     row.class_labels = labels
-    tiles = _tiles(session, {item.id: item.name for item in species})
+    tiles = _tiles(session, {item.id: item.name for item in species}, row.images_from, row.images_to)
     positives = [tile for tile in tiles if tile["boxes"]]
     if not positives:
         row.status = "failed"
@@ -210,10 +210,13 @@ def _tflite_from_zip(content: bytes) -> bytes:
         return archive.read(names[0])
 
 
-def _tiles(session: Session, names: dict) -> list[dict]:
-    rows = session.execute(
-        select(Capture).where(Capture.deleted_at.is_(None), Capture.width.is_not(None), Capture.height.is_not(None))
-    ).scalars()
+def _tiles(session: Session, names: dict, images_from=None, images_to=None) -> list[dict]:
+    filters = [Capture.deleted_at.is_(None), Capture.width.is_not(None), Capture.height.is_not(None)]
+    if images_from is not None:
+        filters.append(Capture.captured_at >= images_from)
+    if images_to is not None:
+        filters.append(Capture.captured_at <= images_to)
+    rows = session.execute(select(Capture).where(*filters)).scalars()
     tiles = []
     for capture in rows:
         boxes = list(

@@ -43,6 +43,8 @@ class Device(Base):
     code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
     frame_size: Mapped[str] = mapped_column(String(8), default="svga", server_default="svga")
     jpeg_quality: Mapped[int] = mapped_column(Integer, default=12, server_default="12")
@@ -126,6 +128,8 @@ class TrainedModel(Base):
     stride: Mapped[int] = mapped_column(Integer, default=64, server_default="64")
     metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    images_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    images_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

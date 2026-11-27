@@ -38,6 +38,8 @@ def to_device_out(device: Device, last_metric, capture_count: int) -> DeviceOut:
         code=device.code,
         name=device.name,
         location=device.location,
+        latitude=device.latitude,
+        longitude=device.longitude,
         owner_id=device.owner_id,
         owner_name=device.owner.name,
         last_seen_at=device.last_seen_at,
@@ -101,10 +103,13 @@ def create_device(
     jpeg_quality = require_jpeg_quality(body.jpeg_quality) if body.jpeg_quality is not None else DEFAULT_JPEG_QUALITY
     sleep_seconds = require_sleep_seconds(body.sleep_seconds) if body.sleep_seconds is not None else DEFAULT_SLEEP_SECONDS
     operating_mode = require_operating_mode(body.operating_mode) if body.operating_mode is not None else DEFAULT_OPERATING_MODE
+    latitude, longitude = _coordinates(body.latitude, body.longitude)
     device = Device(
         code=code,
         name=body.name.strip(),
         location=_clean_location(body.location),
+        latitude=latitude,
+        longitude=longitude,
         owner_id=owner_id,
         frame_size=frame_size,
         jpeg_quality=jpeg_quality,
@@ -148,6 +153,10 @@ def update_device(
         device.name = body.name.strip()
     if "location" in changes:
         device.location = _clean_location(body.location)
+    if "latitude" in changes or "longitude" in changes:
+        latitude = body.latitude if "latitude" in changes else device.latitude
+        longitude = body.longitude if "longitude" in changes else device.longitude
+        device.latitude, device.longitude = _coordinates(latitude, longitude)
     if "frame_size" in changes:
         if body.frame_size is None:
             raise HTTPException(status_code=422, detail="Informe a resolução")
@@ -197,3 +206,13 @@ def _clean_location(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _coordinates(latitude: float | None, longitude: float | None) -> tuple[float | None, float | None]:
+    if (latitude is None) != (longitude is None):
+        raise HTTPException(status_code=422, detail="Informe latitude e longitude juntas")
+    if latitude is not None and not -90 <= latitude <= 90:
+        raise HTTPException(status_code=422, detail="A latitude deve ficar entre -90 e 90")
+    if longitude is not None and not -180 <= longitude <= 180:
+        raise HTTPException(status_code=422, detail="A longitude deve ficar entre -180 e 180")
+    return latitude, longitude

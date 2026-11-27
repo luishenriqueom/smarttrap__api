@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user, require_writer
 from app.db.models import CaptureAnnotation, Species, User
 from app.db.session import get_db
-from app.schemas import SpeciesCreate, SpeciesOut
+from app.schemas import SpeciesCreate, SpeciesOut, SpeciesUpdate
 
 router = APIRouter(prefix="/species", tags=["species"])
 
@@ -31,6 +31,29 @@ def create_species(
     position = db.scalar(select(func.coalesce(func.max(Species.position), -1)))
     row = Species(name=name, position=int(position) + 1)
     db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.patch("/{species_id}", response_model=SpeciesOut)
+def update_species(
+    species_id: UUID,
+    body: SpeciesUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_writer),
+) -> Species:
+    del user
+    row = db.get(Species, species_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Espécie não encontrada")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Informe o nome da espécie")
+    taken = db.scalar(select(Species.id).where(func.lower(Species.name) == name.lower(), Species.id != row.id))
+    if taken is not None:
+        raise HTTPException(status_code=409, detail="Essa espécie já existe")
+    row.name = name
     db.commit()
     db.refresh(row)
     return row

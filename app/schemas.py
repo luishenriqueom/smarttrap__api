@@ -59,6 +59,8 @@ class DeviceOut(BaseModel):
     code: str
     name: str
     location: str | None
+    latitude: float | None
+    longitude: float | None
     owner_id: UUID
     owner_name: str
     last_seen_at: datetime | None
@@ -81,6 +83,8 @@ class DeviceCreate(BaseModel):
     code: str
     name: str = Field(min_length=1, max_length=120)
     location: str | None = Field(default=None, max_length=255)
+    latitude: float | None = None
+    longitude: float | None = None
     owner_id: UUID | None = None
     frame_size: str | None = None
     jpeg_quality: int | None = None
@@ -91,6 +95,8 @@ class DeviceCreate(BaseModel):
 class DeviceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     location: str | None = Field(default=None, max_length=255)
+    latitude: float | None = None
+    longitude: float | None = None
     owner_id: UUID | None = None
     frame_size: str | None = None
     jpeg_quality: int | None = None
@@ -246,6 +252,10 @@ class SpeciesCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class SpeciesUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
 class AnnotationOut(BaseModel):
     id: UUID
     capture_id: UUID
@@ -280,7 +290,14 @@ class ModelOut(BaseModel):
     window: int
     stride: int
     error: str | None
+    images_from: datetime | None
+    images_to: datetime | None
     created_at: datetime
+
+
+class TrainRequest(BaseModel):
+    images_from: datetime | None = None
+    images_to: datetime | None = None
 
 
 class ModelMetaOut(BaseModel):
