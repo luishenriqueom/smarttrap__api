@@ -21,10 +21,13 @@ from app.services.devices import (
 from app.services.framesize import (
     DEFAULT_FRAME_SIZE,
     DEFAULT_JPEG_QUALITY,
+    DEFAULT_NIGHT_END_MINUTE,
+    DEFAULT_NIGHT_START_MINUTE,
     DEFAULT_OPERATING_MODE,
     DEFAULT_SLEEP_SECONDS,
     require_frame_size,
     require_jpeg_quality,
+    require_night_minute,
     require_operating_mode,
     require_sleep_seconds,
 )
@@ -50,6 +53,9 @@ def to_device_out(device: Device, last_metric, capture_count: int) -> DeviceOut:
         frame_size=device.frame_size,
         jpeg_quality=device.jpeg_quality,
         sleep_seconds=device.sleep_seconds,
+        night_start_minute=device.night_start_minute,
+        night_end_minute=device.night_end_minute,
+        night_pause=device.night_pause,
         model_id=device.model_id,
         last_clock_at=device.last_clock_at,
         last_clock_received_at=device.last_clock_received_at,
@@ -102,6 +108,11 @@ def create_device(
     frame_size = require_frame_size(body.frame_size) if body.frame_size is not None else DEFAULT_FRAME_SIZE
     jpeg_quality = require_jpeg_quality(body.jpeg_quality) if body.jpeg_quality is not None else DEFAULT_JPEG_QUALITY
     sleep_seconds = require_sleep_seconds(body.sleep_seconds) if body.sleep_seconds is not None else DEFAULT_SLEEP_SECONDS
+    night_start = require_night_minute(body.night_start_minute) if body.night_start_minute is not None else DEFAULT_NIGHT_START_MINUTE
+    night_end = require_night_minute(body.night_end_minute) if body.night_end_minute is not None else DEFAULT_NIGHT_END_MINUTE
+    night_pause = True if body.night_pause is None else body.night_pause
+    if night_pause and night_start == night_end:
+        raise HTTPException(status_code=422, detail="Os horários de dormir e acordar precisam ser diferentes")
     operating_mode = require_operating_mode(body.operating_mode) if body.operating_mode is not None else DEFAULT_OPERATING_MODE
     latitude, longitude = _coordinates(body.latitude, body.longitude)
     device = Device(
@@ -114,6 +125,9 @@ def create_device(
         frame_size=frame_size,
         jpeg_quality=jpeg_quality,
         sleep_seconds=sleep_seconds,
+        night_start_minute=night_start,
+        night_end_minute=night_end,
+        night_pause=night_pause,
         operating_mode=operating_mode,
     )
     db.add(device)
@@ -169,6 +183,20 @@ def update_device(
         if body.sleep_seconds is None:
             raise HTTPException(status_code=422, detail="Informe o intervalo de sono")
         device.sleep_seconds = require_sleep_seconds(body.sleep_seconds)
+    if "night_start_minute" in changes:
+        if body.night_start_minute is None:
+            raise HTTPException(status_code=422, detail="Informe o horário de dormir")
+        device.night_start_minute = require_night_minute(body.night_start_minute)
+    if "night_end_minute" in changes:
+        if body.night_end_minute is None:
+            raise HTTPException(status_code=422, detail="Informe o horário de acordar")
+        device.night_end_minute = require_night_minute(body.night_end_minute)
+    if "night_pause" in changes:
+        if body.night_pause is None:
+            raise HTTPException(status_code=422, detail="Informe se a pausa da noite fica ligada")
+        device.night_pause = body.night_pause
+    if {"night_start_minute", "night_end_minute", "night_pause"} & changes and device.night_pause and device.night_start_minute == device.night_end_minute:
+        raise HTTPException(status_code=422, detail="Os horários de dormir e acordar precisam ser diferentes")
     if "operating_mode" in changes:
         if body.operating_mode is None:
             raise HTTPException(status_code=422, detail="Informe o modo")

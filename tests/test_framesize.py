@@ -16,7 +16,7 @@ def test_config_follows_the_device_and_defaults_to_svga(client):
 
     fresh = client.get("/api/v1/ingest/config", params={"device_code": "trap-nova"}, headers=GATEWAY)
     assert fresh.status_code == 200, fresh.text
-    assert fresh.json() == {"frame_size": "svga", "width": 800, "height": 600, "jpeg_quality": 12, "sleep_seconds": 300, "operating_mode": "collect"}
+    assert fresh.json() == {"frame_size": "svga", "width": 800, "height": 600, "jpeg_quality": 12, "sleep_seconds": 300, "operating_mode": "collect", "night_start_minute": 1050, "night_end_minute": 390, "night_pause": True}
 
     updated = client.patch(
         f"/api/v1/devices/{created.json()['id']}",
@@ -28,7 +28,7 @@ def test_config_follows_the_device_and_defaults_to_svga(client):
 
     config = client.get("/api/v1/ingest/config", params={"device_code": "trap-res"}, headers=GATEWAY)
     assert config.status_code == 200, config.text
-    assert config.json() == {"frame_size": "qvga", "width": 320, "height": 240, "jpeg_quality": 12, "sleep_seconds": 300, "operating_mode": "collect"}
+    assert config.json() == {"frame_size": "qvga", "width": 320, "height": 240, "jpeg_quality": 12, "sleep_seconds": 300, "operating_mode": "collect", "night_start_minute": 1050, "night_end_minute": 390, "night_pause": True}
 
     quality = client.patch(
         f"/api/v1/devices/{created.json()['id']}",

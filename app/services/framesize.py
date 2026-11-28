@@ -14,6 +14,8 @@ DEFAULT_JPEG_QUALITY = 12
 MIN_JPEG_QUALITY = 4
 MAX_JPEG_QUALITY = 63
 DEFAULT_SLEEP_SECONDS = 300
+DEFAULT_NIGHT_START_MINUTE = 17 * 60 + 30
+DEFAULT_NIGHT_END_MINUTE = 6 * 60 + 30
 DEFAULT_OPERATING_MODE = "collect"
 OPERATING_MODES = {"collect", "infer"}
 MIN_SLEEP_SECONDS = 60
@@ -31,6 +33,12 @@ def require_frame_size(value: str) -> str:
 def require_sleep_seconds(value: int) -> int:
     if value < MIN_SLEEP_SECONDS or value > MAX_SLEEP_SECONDS:
         raise HTTPException(status_code=422, detail="O intervalo de sono deve ficar entre 1 minuto e 24 horas")
+    return value
+
+
+def require_night_minute(value: int) -> int:
+    if value < 0 or value > 1439:
+        raise HTTPException(status_code=422, detail="O horário da pausa deve ficar entre 00:00 e 23:59")
     return value
 
 

@@ -71,6 +71,9 @@ class DeviceOut(BaseModel):
     frame_size: str
     jpeg_quality: int
     sleep_seconds: int
+    night_start_minute: int
+    night_end_minute: int
+    night_pause: bool
     model_id: UUID | None
     last_clock_at: datetime | None
     last_clock_received_at: datetime | None
@@ -89,6 +92,9 @@ class DeviceCreate(BaseModel):
     frame_size: str | None = None
     jpeg_quality: int | None = None
     sleep_seconds: int | None = None
+    night_start_minute: int | None = None
+    night_end_minute: int | None = None
+    night_pause: bool | None = None
     operating_mode: str | None = None
 
 
@@ -101,6 +107,9 @@ class DeviceUpdate(BaseModel):
     frame_size: str | None = None
     jpeg_quality: int | None = None
     sleep_seconds: int | None = None
+    night_start_minute: int | None = None
+    night_end_minute: int | None = None
+    night_pause: bool | None = None
     model_id: UUID | None = None
     operating_mode: str | None = None
 
@@ -112,6 +121,9 @@ class FrameConfigOut(BaseModel):
     jpeg_quality: int
     sleep_seconds: int
     operating_mode: str
+    night_start_minute: int
+    night_end_minute: int
+    night_pause: bool
     set_time: int | None = None
 
 

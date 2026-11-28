@@ -154,6 +154,9 @@ def device_config(
         jpeg_quality=device.jpeg_quality,
         sleep_seconds=device.sleep_seconds,
         operating_mode=device.operating_mode,
+        night_start_minute=device.night_start_minute,
+        night_end_minute=device.night_end_minute,
+        night_pause=device.night_pause,
         set_time=int(now.timestamp()) if device.clock_sync_requested else None,
     )
 

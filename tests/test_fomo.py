@@ -43,6 +43,50 @@ def test_sleep_interval_is_configurable_and_defaults_to_five_minutes(client):
     ).status_code == 422
 
 
+def test_night_window_is_configurable_and_defaults_to_the_firmware_margin(client):
+    admin = login(client, "admin@smarttrap.local", "admin123")
+    created = client.post("/api/v1/devices", json={"code": "trap-noite", "name": "Noite"}, headers=admin)
+    assert created.status_code == 201, created.text
+    assert created.json()["night_start_minute"] == 17 * 60 + 30
+    assert created.json()["night_end_minute"] == 6 * 60 + 30
+    assert created.json()["night_pause"] is True
+
+    updated = client.patch(
+        f"/api/v1/devices/{created.json()['id']}",
+        json={"night_start_minute": 18 * 60, "night_end_minute": 6 * 60, "night_pause": False},
+        headers=admin,
+    )
+    assert updated.status_code == 200, updated.text
+    config = client.get("/api/v1/ingest/config", params={"device_code": "trap-noite"}, headers=GATEWAY)
+    assert config.status_code == 200, config.text
+    assert config.json()["night_start_minute"] == 18 * 60
+    assert config.json()["night_end_minute"] == 6 * 60
+    assert config.json()["night_pause"] is False
+
+    same = client.patch(
+        f"/api/v1/devices/{created.json()['id']}",
+        json={"night_pause": True},
+        headers=admin,
+    )
+    assert same.status_code == 200, same.text
+    assert same.json()["night_start_minute"] == 18 * 60
+    assert client.patch(
+        f"/api/v1/devices/{created.json()['id']}",
+        json={"night_start_minute": 24 * 60},
+        headers=admin,
+    ).status_code == 422
+    assert client.patch(
+        f"/api/v1/devices/{created.json()['id']}",
+        json={"night_end_minute": 18 * 60},
+        headers=admin,
+    ).status_code == 422
+    assert client.patch(
+        f"/api/v1/devices/{created.json()['id']}",
+        json={"night_pause": False, "night_end_minute": 18 * 60},
+        headers=admin,
+    ).status_code == 200
+
+
 def test_human_box_is_exported_and_device_box_arrives_with_the_photo(client):
     admin = login(client, "admin@smarttrap.local", "admin123")
     species = client.post("/api/v1/species", json={"name": "mosca"}, headers=admin)
